@@ -15,6 +15,7 @@ class JTableManager extends JTable
 {
 
 	protected $_db;
+	protected $_columns;
 	protected $_table = '#__jtable_test';
 	protected $_primary_key = 'id';
 	protected $_charset = 'utf8mb4';
@@ -30,6 +31,7 @@ class JTableManager extends JTable
 			'read_only' => null,
 			'nullable' => false,
 			'default' => null,
+			'extra' => 'auto_increment',
 		),
 		'asset_id' => array(
 			'mysql_type' => 'int(10) unsigned',
@@ -71,22 +73,12 @@ class JTableManager extends JTable
 				 */
 			}
 		}
-		$columns = $db->getTableColumns($this->_table);
 
+		$this->_columns = $db->getTableColumns($this->_table,false);
 		foreach ($this->_field_defenitions as $field => $defenition){
-			if(!array_key_exists($field,$columns)){
-				$result = $this->createField($field, $defenition['mysql_type'], $defenition['nullable'],$defenition['default'],base64_encode(json_encode($defenition)));
-				if(!$result){
-					/*
-					 * TODO: Raise ERRORs
-					 */
-				}
-			}else{
-				/*
-				 * TODO: Check type
-				 */
-			}
+			$this->checkField($field, $defenition['mysql_type'], $defenition['nullable'],$defenition['default'],base64_encode(json_encode($defenition)), $defenition['extra']);
 		}
+		$this->_columns = $db->getTableColumns($this->_table,false);
 
 		parent::__construct($this->_table, $this->_primary_key, $db);
 
@@ -98,6 +90,40 @@ class JTableManager extends JTable
 		}
 	}
 
+	protected function checkField($name, $type = 'text', $is_null = false, $default = false, $comment = '', $extra = ''){
+		/** @var JDatabaseDriver $db */
+		$db = $this->_db;
+
+		$column = (array)$this->_columns[$name];
+
+		$sql = $this->fieldSql($name, $type, $is_null, $default, $comment, $extra);
+		$chitem = JSchemaChangeitem::getInstance($db,null,$sql);
+		if($chitem->checkQueryExpected){
+			if($chitem->check() !== -2)
+			{
+				/*
+				 * check isn't failed need to check deeper
+				 */
+				if ($column['Type']!=$type){
+					$chitem->checkStatus = -2;
+				}elseif ($column['Collation'] && $column['Collation'] != $this->_charset.'_'.$this->_collation){
+					$chitem->checkStatus = -2;
+				}elseif (($column['NULL']=='NO' && !$is_null) || ($column['NULL']=='YES' && $is_null)){
+					$chitem->checkStatus = -2;
+				}elseif ($column['Default'] != $default){
+					$chitem->checkStatus = -2;
+				}elseif ($column['Comment'] != $comment){
+					$chitem->checkStatus = -2;
+				}
+
+			}
+
+			if($chitem->checkStatus === -2){
+				$chitem->fix();
+			}
+		}
+	}
+
 	protected function onBeforeInit(){
 		return true;
 	}
@@ -106,18 +132,18 @@ class JTableManager extends JTable
 		return true;
 	}
 
-	protected function createField($name, $type = 'text', $is_null = false, $default = false, $comment = ''){
+	protected function fieldSql($name, $type = 'text', $is_null = false, $default = false, $comment = '', $extra = ''){
 		$db = $this->_db;
-		$sql = 'ALTER TABLE '.$db->qn($this->_table).' ADD COLUMN ';
+		$sql = 'ALTER TABLE '.$db->qn($this->_table).' '.(array_key_exists($name,$this->_columns)?'MODIFY':'ADD COLUMN').' ';
 		if(strpos($type,'text')!==false){
 			$type .= ' COLLATE='.$this->_charset.'_'.$this->_collation;
 		}elseif (strpos($type,'varchar')!==false){
 			$type .= ' CHARACTER SET '.$this->_charset.' COLLATE '.$this->_charset.'_'.$this->_collation;
 		}
-		$sql .= $db->qn($name).' '.$type.' '.($is_null?'NULL':'NOT NULL').' '.(is_null($default)?'':('DEFAULT '.$db->q($default)));
+		$sql .= $name.' '.$type.' '.($is_null?'NULL':'NOT NULL').' '.(is_null($default)?'':('DEFAULT '.$db->q($default)));
 		$sql .= ' COMMENT '.$db->q($comment);
-		return $db->setQuery($sql)->execute();
-
+		$sql .= ' '.$extra;
+		return $sql;
 	}
 
 	protected function createTable(){
