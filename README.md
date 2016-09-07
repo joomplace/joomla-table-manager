@@ -14,6 +14,8 @@ Project brings up something like ORM functionality, build with native Joomla app
 
 ### Phase 3:
 - [ ] Building component for GUI managment of database;
+
+
 ___
 
 Actions to test first part of implementation:
