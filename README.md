@@ -28,3 +28,6 @@ Expected result:
 - Fields created according to defenitions if not exists;
 - Form genarated according to fields defenitions;
 
+___
+
+Project need to be refactored and need to use JooYii
